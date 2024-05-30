@@ -73,19 +73,23 @@ class TestTransformerDecoderModel:
 		
 		assert input_embeddings.shape == decoder_block_outputs.shape
 
+
 	def test_TransformerDecoderModel(self):
 		batch_size = 64
 		max_seq_length = 5
-		input_token_ids = tf.random.uniform(shape=[batch_size, max_seq_length], 
-											maxval=1024, 
-											dtype=tf.int32)
+		x_train = tf.random.uniform(shape=[batch_size, max_seq_length], 
+									maxval=1024, 
+									dtype=tf.int32)
+
+		y_train = tf.random.uniform(shape=[batch_size, max_seq_length], 
+									maxval=1024, 
+									dtype=tf.int32)
 
 		decoder_model = TransformerDecoderModel(config)
-		decoder_model_outputs = decoder_model(input_token_ids)
+		decoder_model_outputs = decoder_model(x_train)
 		
-		assert decoder_model_outputs.shape == (batch_size, max_seq_length, config["hidden_dim"])
-
-		y_train = tf.random.uniform(shape=[batch_size, max_seq_length, config["hidden_dim"]])
-
-		decoder_model.compile(loss="mse", optimizer="adam")
-		decoder_model.fit(input_token_ids, y_train, epochs=3)
+		assert decoder_model_outputs.shape == (batch_size, max_seq_length, config["vocab_size"])
+		
+		loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+		decoder_model.compile(loss=loss_fn, optimizer="adam")
+		decoder_model.fit(x_train, y_train, epochs=3)

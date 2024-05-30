@@ -1,6 +1,37 @@
 import tensorflow as tf
 
 
+class EmbeddingLayers(tf.keras.layers.Layer):
+	def __init__(self, config):
+		super().__init__()
+
+		self.token_embeddings = tf.keras.layers.Embedding(
+			input_dim=config["vocab_size"],
+			output_dim=config["hidden_dim"]
+		)
+		self.position_embeddings = tf.keras.layers.Embedding(
+			input_dim=config["max_seq_length"],
+			output_dim=config["hidden_dim"]
+		)
+		self.layer_norm = tf.keras.layers.LayerNormalization()
+		self.dropout = tf.keras.layers.Dropout(rate=config["droptout_rate"])
+
+	def call(self, input_token_ids):
+		
+		token_embeddings = self.token_embeddings(input_token_ids)
+
+		seq_length = input_token_ids.shape[1]
+		_position_ids = tf.range(seq_length, dtype=tf.float32)
+		position_ids = tf.expand_dims(_position_ids, axis=0)
+		position_embeddings = self.position_embeddings(position_ids)
+
+		embeddings = token_embeddings + position_embeddings
+		embeddings = self.layer_norm(embeddings)
+		embeddings = self.dropout(embeddings)
+
+		return embeddings
+
+
 class AttentionHead(tf.keras.layers.Layer):
 	def __init__(self, head_dim, is_masked):
 		super().__init__()
@@ -101,35 +132,14 @@ class TransformerDecoderBlock(tf.keras.layers.Layer):
 		return x
 
 
-class EmbeddingLayers(tf.keras.layers.Layer):
-	def __init__(self, config):
+class TiedEmbeddingLayer(tf.keras.layers.Layer):
+	def __init__(self, token_embeddings):
 		super().__init__()
+		self.token_embeddings = token_embeddings
 
-		self.token_embeddings = tf.keras.layers.Embedding(
-			input_dim=config["vocab_size"],
-			output_dim=config["hidden_dim"]
-		)
-		self.position_embeddings = tf.keras.layers.Embedding(
-			input_dim=config["max_seq_length"],
-			output_dim=config["hidden_dim"]
-		)
-		self.layer_norm = tf.keras.layers.LayerNormalization()
-		self.dropout = tf.keras.layers.Dropout(rate=config["droptout_rate"])
-
-	def call(self, input_token_ids):
-		
-		token_embeddings = self.token_embeddings(input_token_ids)
-
-		seq_length = input_token_ids.shape[1]
-		_position_ids = tf.range(seq_length, dtype=tf.float32)
-		position_ids = tf.expand_dims(_position_ids, axis=0)
-		position_embeddings = self.position_embeddings(position_ids)
-
-		embeddings = token_embeddings + position_embeddings
-		embeddings = self.layer_norm(embeddings)
-		embeddings = self.dropout(embeddings)
-
-		return embeddings
+	def call(self, hidden_state):
+		token_embeddings_matrix = self.token_embeddings.weights[0]
+		return tf.linalg.matmul(hidden_state, token_embeddings_matrix, transpose_b=True)
 
 
 class TransformerDecoderModel(tf.keras.Model):
@@ -139,6 +149,7 @@ class TransformerDecoderModel(tf.keras.Model):
 		self.decoder_blocks = [
 			TransformerDecoderBlock(config) for _ in range(config["num_decoder_blocks"])
 		]
+		self.tied_embedding_layer = TiedEmbeddingLayer(self.embedding_layers.token_embeddings)
 
 	def call(self, input_token_ids):
 
@@ -152,4 +163,6 @@ class TransformerDecoderModel(tf.keras.Model):
 		for decoder_block in self.decoder_blocks:
 			x = decoder_block(x)
 
-		return x
+		y = self.tied_embedding_layer(x)
+
+		return y
